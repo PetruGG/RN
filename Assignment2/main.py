@@ -137,8 +137,8 @@ if __name__ == "__main__":
 
     W, b, losses, val_losses = training(x_train_split, y_train_split, x_val, y_val)
     test_accuracy, test_loss = evaluate(x_test, y_test, W, b)
-    print(f"test_accuracy:{test_accuracy * 100}")
-    print(f"test_loss:{test_loss}")
+    print(f"test_accuracy:{test_accuracy * 100:.2f}%")
+    print(f"test_loss:{test_loss:.4f}")
 
     predictions = predict(x_test, W, b)
     predictions_csv = {

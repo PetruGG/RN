@@ -1,11 +1,11 @@
 import numpy as np
+import pickle as pkl
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, DataLoader
-from torchvision.datasets import MNIST
 from tqdm import tqdm
 
 
@@ -35,23 +35,20 @@ class MNISTDataset(Dataset):
         return sample, label
 
 
-def load_data():
-    train_transforms = None
-    test_transforms = None
-    train_dataset = MNIST('data', train=True, transform=train_transforms, download=True)
-    test_dataset = MNIST('data', train=False, transform=test_transforms, download=True)
-
+def load_data(train_file, test_file):
     train_data = []
     train_labels = []
     test_data = []
     test_labels = []
-    for image, label in train_dataset:
-        img_array = np.array(image, dtype=np.float32)
-        train_data.append(img_array.flatten())
+    with open(train_file, "rb") as fp:
+        train = pkl.load(fp)
+    with open(test_file, "rb") as fp:
+        test = pkl.load(fp)
+    for image, label in train:
+        train_data.append(image)
         train_labels.append(label)
-    for image, label in test_dataset:
-        img_array = np.array(image, dtype=np.float32)
-        test_data.append(img_array.flatten())
+    for image, label in test:
+        test_data.append(image)
         test_labels.append(label)
     return train_data, train_labels, test_data, test_labels
 
@@ -207,31 +204,6 @@ def training(x_train, y_train, x_val, y_val, learning_rate=0.001, epochs=250, pa
 
 
 @torch.inference_mode()
-def evaluate(model, test_loader, device):
-    model.eval()
-    correct = 0
-    total = 0
-    test_loss = 0.0
-    criterion = nn.CrossEntropyLoss()
-
-    for batch_x, batch_y in test_loader:
-        batch_x = batch_x.to(device)
-        batch_y = batch_y.to(device)
-
-        outputs = model(batch_x)
-        loss = criterion(outputs, batch_y)
-        test_loss += loss.item()
-
-        _, predicted = torch.max(outputs.data, 1)
-        total += batch_y.size(0)
-        correct += (predicted == batch_y).sum().item()
-
-    test_accuracy = 100.0 * correct / total
-    test_loss /= len(test_loader)
-    return test_accuracy, test_loss
-
-
-@torch.inference_mode()
 def predict(model, test_loader, device):
     model.eval()
     all_predictions = []
@@ -246,12 +218,18 @@ def predict(model, test_loader, device):
 
 
 if __name__ == '__main__':
-    train_data, train_labels, test_data, test_labels = load_data()
-
+    train_file = "extended_mnist_train.pkl"
+    test_file = "extended_mnist_test.pkl"
+    train_data, train_labels, test_data, test_labels = load_data(train_file, test_file)
     x_train = np.array(train_data)
     y_train = np.array(train_labels)
     x_test = np.array(test_data)
     y_test = np.array(test_labels)
+
+    if np.any(y_test == -1) or len(y_test) == 0:
+        y_test_dummy = np.zeros(len(x_test), dtype=np.int64)
+    else:
+        y_test_dummy = y_test
 
     mean = np.mean(x_train, axis=0)
     std = np.std(x_train, axis=0) + 1e-10
@@ -266,7 +244,7 @@ if __name__ == '__main__':
     print(f"Validation set size: {x_val.shape[0]}")
     print(f"Test set size: {x_test.shape[0]}")
 
-    test_dataset = MNISTDataset(x_test, y_test)
+    test_dataset = MNISTDataset(x_test, y_test_dummy)
     test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False)
 
     optimizer_type = 'rmsprop'
@@ -274,7 +252,7 @@ if __name__ == '__main__':
     model, losses, val_losses, val_accuracies = training(
         x_train_split, y_train_split, x_val, y_val,
         learning_rate=0.001,
-        epochs=200,
+        epochs=120,
         patience=30,
         dropout_rate=0.2,
         hidden_neurons=512,
@@ -282,9 +260,6 @@ if __name__ == '__main__':
         weight_decay=1e-4,
         optimizer_type=optimizer_type
     )
-    test_accuracy, test_loss = evaluate(model, test_loader, device)
-    print(f"\nTest accuracy with {optimizer_type}: {test_accuracy:.2f}%")
-    print(f"Test loss with {optimizer_type}: {test_loss:.4f}")
     predictions = predict(model, test_loader, device)
     predictions_csv = {
         "ID": list(range(len(predictions))),
